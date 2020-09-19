@@ -3,6 +3,84 @@ use rand_distr::{Distribution, Normal, Uniform};
 use std::collections::BTreeMap;
 use std::fmt;
 
+#[derive(Debug, PartialEq, Eq)]
+enum Direction {
+    Outgoing,
+    Incoming,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum State {
+    Idle,
+    Burst,
+    Gap,
+}
+
+#[derive(Debug)]
+struct WTFPAD {
+    config: WTFPADConfig,
+    state: State,
+    histogram_gap: AdaptiveHistogram,
+    histogram_burst: AdaptiveHistogram,
+    state_timeout: SystemTime,
+}
+#[derive(Debug)]
+struct WTFPADConfig {
+    padded_size: usize,
+    histogram_gap: AdaptiveHistogram,
+    histogram_burst: AdaptiveHistogram,
+}
+
+impl Default for WTFPADConfig {
+    fn default() -> Self {
+        WTFPADConfig {
+            padded_size: 1500,
+            // Note: this values have been experimentally derived from Tor traffic and have not been adapted to QUIC traffic
+            histogram_gap: AdaptiveHistogram::new(AdaptiveHistogramConfig {
+                mu: 0.001564159,
+                sigma: 0.052329599,
+                ..Default::default()
+            }),
+            histogram_burst: AdaptiveHistogram::new(AdaptiveHistogramConfig {
+                mu: 0.001564159,
+                sigma: 0.052329599,
+                ..Default::default()
+            }),
+        }
+    }
+}
+
+impl WTFPAD {
+    /// Simply returns the configured fixed size. The implementation using WTFPAD is responsible for producing a packet of this length.
+    fn pad_individual(&self, size: usize) -> usize {
+        return self.config.padded_size;
+    }
+
+    /// Update_state should be called: when a packet is sent/received (depending to the flow being protected), dummy or not.
+    fn update_state(&self, packet_sent: bool, is_dummy: bool) {
+        if packet_sent && !is_dummy {
+            // new transmission after a period of silence, switch to Burst mode
+            self.state = State::Burst;
+        }
+        // else, if this function was call by a timeout or by a dummy, check if we should "downgrade" the state
+        else if self.state_timeout < SystemTime::now() {
+            if self.state == State::Burst {
+                self.state = State::Gap;
+            } else if self.state == State::Gap {
+                self.state = State::Idle;
+            }
+        }
+    }
+
+    /// Returns the time at which the next dummy packet should be sent.
+    fn next_dummy(&self) -> Option<(f32, usize)> {
+        return match self.state {
+            State::Burst => Some((self.histogram_burst.sample(), self.config.padded_size)),
+            State::Gap => Some((self.histogram_gap.sample(), self.config.padded_size)),
+            State::Idle => None,
+        };
+    }
+
 /// AdaptiveHistogramConfig characterizes the initial state of an AdaptiveHistogram.
 /// n_samples, bin_upperbound and n_bins relate to the precision used when building the histogram.
 ///  - n_samples dictates how many samples we take to rebuild the distribution;
