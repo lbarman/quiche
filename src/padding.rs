@@ -18,6 +18,7 @@ struct AdaptiveHistogramConfig {
     n_bins: u32,
     mu: f32,
     sigma: f32,
+    infinity_bin_config: InfinityBinConfig,
 }
 
 impl Default for AdaptiveHistogramConfig {
@@ -29,9 +30,28 @@ impl Default for AdaptiveHistogramConfig {
             // Note: this values have been experimentally derived from Tor traffic and have not been adapted to QUIC traffic
             mu: 0.001564159,
             sigma: 0.052329599,
+            infinity_bin_config: Default::default(),
         }
     }
 }
+
+#[derive(Debug)]
+struct InfinityBinConfig {
+    burst_length: u32,
+    probability_of_fake_burst: f32,
+    distribution_type: State,
+}
+
+impl Default for InfinityBinConfig {
+    fn default() -> Self {
+        InfinityBinConfig {
+            burst_length: 10,
+            probability_of_fake_burst: 0.1,
+            distribution_type: State::Idle,
+        }
+    }
+}
+
 /// A histogram that represents an adaptive probability distribution: one can sample/draw a value from this distribution, removing a token from a bin and thus altering the distribution.
 /// Once no token is left, the initial distribution is re-computed.
 /// ```
@@ -113,11 +133,41 @@ impl AdaptiveHistogram {
             current_bin_id += 1;
             i = j;
         }
+
         // add empty values for unused bins$
         while current_bin_id < n_bins {
             self.histogram.insert(OrderedFloat(bins[current_bin_id]), 0);
             current_bin_id += 1;
         }
+
+        // add an "infinity bin" at the end. It probability distribution depends on the state this histogram is modelling
+        let infinity_bin_count: u32 = match self
+            .config
+            .infinity_bin_config
+            .distribution_type
+        {
+            State::Gap => {
+                let n = self.config.n_samples as f32;
+                let b = self.config.infinity_bin_config.burst_length as f32;
+                // The expectation of the geometric distribution of consecutive samples from the histogram to be the average number of packets in a burst `burst_length`.
+                // -> the probability of falling into the infinity bin should be p = 1/b
+                // Since p = #tokens in infinity bin / #tokens
+                // -> #tokens/b = #tokens in infinity bin
+                // -> #tokens in infinity bins = #tokens in other bins / (b-1)
+                (n / (b - 1.0)).ceil() as u32
+            }
+            State::Burst => {
+                let n = self.config.n_samples as f32;
+                //TODO: LB: check, this seems odd
+                (n / self.config.infinity_bin_config.probability_of_fake_burst)
+                    .ceil() as u32
+            }
+            State::Idle => 0, // Idle is not modeled by a histogram
+        };
+
+        self.histogram
+            .insert(OrderedFloat(INFINITY_BIN), infinity_bin_count);
+
         self.tokens_left = self.config.n_samples;
     }
 }
