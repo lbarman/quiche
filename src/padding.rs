@@ -285,97 +285,102 @@ impl AdaptiveHistogram {
     }
 }
 
-#[test]
-fn test_adaptive_histogram() {
-    let mut ah: AdaptiveHistogram = Default::default();
-    assert!(ah.tokens_left == 0);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    ah.config.n_samples = 100;
-    ah.rebuild();
+    #[test]
+    fn test_adaptive_histogram() {
+        let mut ah: AdaptiveHistogram = Default::default();
+        assert!(ah.tokens_left == 0);
 
-    // sample n token
-    for i in 0..ah.config.n_samples {
-        // check that token_left is updated accordingly
-        assert!(ah.config.n_samples - i == ah.tokens_left);
+        ah.config.n_samples = 100;
+        ah.rebuild();
 
-        // check that the token is valid
+        // sample n token
+        for i in 0..ah.config.n_samples {
+            // check that token_left is updated accordingly
+            assert!(ah.config.n_samples - i == ah.tokens_left);
+
+            // check that the token is valid
+            let token = ah.sample();
+            assert!(0f32 <= token && token <= ah.config.bin_upperbound);
+        }
+
+        // next sample() will trigger rebuild() internally
         let token = ah.sample();
         assert!(0f32 <= token && token <= ah.config.bin_upperbound);
+        assert!(ah.tokens_left == ah.config.n_samples - 1);
     }
 
-    // next sample() will trigger rebuild() internally
-    let token = ah.sample();
-    assert!(0f32 <= token && token <= ah.config.bin_upperbound);
-    assert!(ah.tokens_left == ah.config.n_samples - 1);
-}
+    #[test]
+    fn test_wtpad_states() {
+        let mut w: WTFPAD = Default::default();
+        assert!(w.state == State::Idle);
 
-#[test]
-fn test_wtpad_states() {
-    let mut w: WTFPAD = Default::default();
-    assert!(w.state == State::Idle);
+        // sending a packet in Idle changes to Burst
+        w.state = State::Idle;
+        w.update_state(true, false);
+        assert!(w.state == State::Burst);
 
-    // sending a packet in Idle changes to Burst
-    w.state = State::Idle;
-    w.update_state(true, false);
-    assert!(w.state == State::Burst);
+        let some_time_ago: SystemTime =
+            SystemTime::now() - Duration::from_millis(100);
+        w.state_timeout = Some(some_time_ago);
 
-    let some_time_ago: SystemTime =
-        SystemTime::now() - Duration::from_millis(100);
-    w.state_timeout = Some(some_time_ago);
+        // timeout in Burst changes to Gap
+        w.state = State::Burst;
+        w.update_state(false, false);
+        assert!(w.state == State::Gap);
 
-    // timeout in Burst changes to Gap
-    w.state = State::Burst;
-    w.update_state(false, false);
-    assert!(w.state == State::Gap);
+        // timeout in Gap changes to Idle
+        w.state = State::Gap;
+        w.update_state(false, false);
+        assert!(w.state == State::Idle);
 
-    // timeout in Gap changes to Idle
-    w.state = State::Gap;
-    w.update_state(false, false);
-    assert!(w.state == State::Idle);
+        // TODO: this is what the python implementation does, but it seems odd.
+        // real packet send in Gap changes to Idle
+        w.state = State::Gap;
+        w.update_state(false, true);
+        assert!(w.state == State::Idle);
+    }
 
-    // TODO: this is what the python implementation does, but it seems odd.
-    // real packet send in Gap changes to Idle
-    w.state = State::Gap;
-    w.update_state(false, true);
-    assert!(w.state == State::Idle);
-}
+    #[test]
+    fn test_wtpad_individual_padding() {
+        let w: WTFPAD = Default::default();
+        assert!(w.pad_individual(1000) == w.config.padded_size);
+    }
 
-#[test]
-fn test_wtpad_individual_padding() {
-    let w: WTFPAD = Default::default();
-    assert!(w.pad_individual(1000) == w.config.padded_size);
-}
+    #[test]
+    fn test_wtpad_drawing_samples() {
+        let mut w: WTFPAD = Default::default();
+        w.state = State::Burst;
+        let dummy = w.next_dummy();
+        assert!(dummy.is_some());
+    }
 
-#[test]
-fn test_wtpad_drawing_samples() {
-    let mut w: WTFPAD = Default::default();
-    w.state = State::Burst;
-    let dummy = w.next_dummy();
-    assert!(dummy.is_some());
-}
+    #[test]
+    fn test_timeout_to_systemtime() {
+        let mut ah: AdaptiveHistogram = Default::default();
+        ah.rebuild();
 
-#[test]
-fn test_timeout_to_systemtime() {
-    let mut ah: AdaptiveHistogram = Default::default();
-    ah.rebuild();
+        let timeout_s = ah.sample();
+        let timeout_unixtime = timeout_to_future_unixtime(timeout_s);
+        let diff = timeout_unixtime.duration_since(SystemTime::now()).unwrap();
 
-    let timeout_s = ah.sample();
-    let timeout_unixtime = timeout_to_future_unixtime(timeout_s);
-    let diff = timeout_unixtime.duration_since(SystemTime::now()).unwrap();
+        let small_tolerance = 0.001f32; // 1ms
+        assert!((timeout_s - diff.as_secs_f32()).abs() < small_tolerance);
+    }
 
-    let small_tolerance = 0.001f32; // 1ms
-    assert!((timeout_s - diff.as_secs_f32()).abs() < small_tolerance);
-}
+    #[test]
+    fn test_wtpad() {
+        let mut w: WTFPAD = Default::default();
+        w.state = State::Burst;
+        let dummy = w.next_dummy();
+        assert!(dummy.is_some());
 
-#[test]
-fn test_wtpad() {
-    let mut w: WTFPAD = Default::default();
-    w.state = State::Burst;
-    let dummy = w.next_dummy();
-    assert!(dummy.is_some());
-
-    match w.next_dummy() {
-        Some(i) => println!("{:?}, {}", i.0, i.1),
-        None => println!("No dummy drawn"),
+        match w.next_dummy() {
+            Some(i) => println!("{:?}, {}", i.0, i.1),
+            None => println!("No dummy drawn"),
+        }
     }
 }
