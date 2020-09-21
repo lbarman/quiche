@@ -33,13 +33,13 @@ impl Default for WTFPAD {
             WTFPADConfig { padded_size: 1500 },
             // Note: this values have been experimentally derived from Tor traffic and have not been adapted to QUIC traffic
             AdaptiveHistogramConfig {
-                mu: 0.001564159,
-                sigma: 0.052329599,
+                mu: 0.001_564_1,
+                sigma: 0.052_329_6,
                 ..Default::default()
             },
             AdaptiveHistogramConfig {
-                mu: 0.001564159,
-                sigma: 0.052329599,
+                mu: 0.001_564_1,
+                sigma: 0.052_329_6,
                 ..Default::default()
             },
         )
@@ -62,7 +62,7 @@ impl WTFPAD {
 
     /// Simply returns the configured fixed size. The implementation using WTFPAD is responsible for producing a packet of this length.
     fn pad_individual(&self, _size: usize) -> usize {
-        return self.config.padded_size;
+        self.config.padded_size
     }
 
     /// Update_state should be called: when a packet is sent/received (depending to the flow being protected), dummy or not.
@@ -70,9 +70,8 @@ impl WTFPAD {
         if packet_sent && !is_dummy {
             // new transmission after a period of silence, switch to Burst mode
             self.state = State::Burst;
-        }
         // else, if this function was call by a timeout or by a dummy, check if we should "downgrade" the state
-        else if self.state_timeout.is_some()
+        } else if self.state_timeout.is_some()
             && self.state_timeout.unwrap() < SystemTime::now()
         {
             if self.state == State::Burst {
@@ -85,7 +84,7 @@ impl WTFPAD {
 
     /// Returns the time at which the next dummy packet should be sent. Alters self.state_timeout with the returned timeout, if any
     fn next_dummy(&mut self) -> Option<(SystemTime, usize)> {
-        return match self.state {
+        match self.state {
             State::Burst => {
                 let timeout =
                     timeout_to_future_unixtime(self.histogram_burst.sample());
@@ -99,7 +98,7 @@ impl WTFPAD {
                 Some((timeout, self.config.padded_size))
             }
             State::Idle => None,
-        };
+        }
     }
 }
 
@@ -179,7 +178,7 @@ impl AdaptiveHistogram {
             tokens_left: 0,
         };
         ah.rebuild();
-        return ah;
+        ah
     }
 
     /// Samples a value from the probability distribution, altering it. If the "distribution is depleted" (all tokens have been drawn), this recomputes a fresh distribution from the configuration.
@@ -202,7 +201,7 @@ impl AdaptiveHistogram {
         self.histogram.insert(kv.0, kv.1 - 1);
         let selected_bin = kv.0.into();
         self.tokens_left -= 1;
-        return selected_bin;
+        selected_bin
     }
 
     /// Build a histogram by drawing values from the normal distribution and placing them in buckets. O(N) space, O(N log(N)) time where N is the number of samples
@@ -283,16 +282,6 @@ impl AdaptiveHistogram {
             .insert(OrderedFloat(INFINITY_BIN), infinity_bin_count);
 
         self.tokens_left = self.config.n_samples;
-    }
-}
-
-impl fmt::Display for AdaptiveHistogram {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        Ok({
-            for (bin, count) in &self.histogram {
-                writeln!(f, "{}: {}", bin, count).unwrap();
-            }
-        })
     }
 }
 
