@@ -9,7 +9,8 @@ use std::time::SystemTime;
 const INFINITY_BIN: f32 = -1f32;
 
 /// Available padding algorithms.
-/// algorithms.#[derive(Debug, Copy, Clone, PartialEq)]
+/// algorithms.
+#[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(C)]
 pub enum PaddingAlgorithm {
     /// No padding / no dummies are added. `none` in a string form.
@@ -34,15 +35,37 @@ impl FromStr for PaddingAlgorithm {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum State {
-    Idle,
-    Burst,
-    Gap,
+pub trait Padding {
+    /// Takes as input a packet size, returns the desired padded size. The caller is responsible for padding the packet to this size.
+    fn pad_individual(&self, size: usize) -> usize;
+
+    /// Returns the time at which the next dummy packet should be sent. The caller is responsible for generating a packet at the correct time.
+    fn update_state(&mut self, packet_sent: bool, is_dummy: bool);
+
+    /// Updates the internal state. Should be called when a timeout is fired or a packet is sent.
+    fn next_dummy(&mut self) -> Option<(SystemTime, usize)>;
 }
 
+/// A transparent padding algorithm that does nothing
+pub struct NonePadding {}
+
+impl Padding for NonePadding {
+    fn pad_individual(&self, size: usize) -> usize {
+        size
+    }
+
+    fn update_state(&mut self, _packet_sent: bool, _is_dummy: bool) {}
+
+    fn next_dummy(&mut self) -> Option<(SystemTime, usize)> {
+        None
+    }
+}
+
+/// Implementation of WTF-PAD (Juarez et al.) as a padding algorithm.
+/// This implements one side (client or server) of WTF-PAD.
+/// Ideally, the client and the server should be coordinated and both use WTF-PAD.
 #[derive(Debug)]
-struct WTFPAD {
+pub struct WTFPAD {
     config: WTFPADConfig,
     state: State,
     histogram_gap: AdaptiveHistogram,
@@ -52,6 +75,13 @@ struct WTFPAD {
 #[derive(Debug)]
 struct WTFPADConfig {
     padded_size: usize,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum State {
+    Idle,
+    Burst,
+    Gap,
 }
 
 impl WTFPAD {
@@ -86,12 +116,6 @@ impl Default for WTFPAD {
             },
         )
     }
-}
-
-trait Padding {
-    fn pad_individual(&self, size: usize) -> usize;
-    fn update_state(&mut self, packet_sent: bool, is_dummy: bool);
-    fn next_dummy(&mut self) -> Option<(SystemTime, usize)>;
 }
 
 impl Padding for WTFPAD {

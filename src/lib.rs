@@ -914,6 +914,9 @@ pub struct Connection {
     /// Whether peer transport parameters were qlogged.
     #[cfg(feature = "qlog")]
     qlogged_peer_params: bool,
+
+    /// The padding algorithm used. See `padding.rs`
+    padding_algorithm: Box<dyn Padding>,
 }
 
 /// Creates a new server-side connection.
@@ -1221,6 +1224,8 @@ impl Connection {
 
             #[cfg(feature = "qlog")]
             qlogged_peer_params: false,
+
+            padding_algorithm: Box::new(NonePadding {}),
         });
 
         if let Some(odcid) = odcid {
@@ -7180,7 +7185,7 @@ mod tests {
 
 pub use crate::packet::Header;
 pub use crate::packet::Type;
-pub use crate::padding::PaddingAlgorithm;
+pub use crate::padding::{NonePadding, Padding, PaddingAlgorithm};
 pub use crate::recovery::CongestionControlAlgorithm;
 pub use crate::stream::StreamIter;
 
