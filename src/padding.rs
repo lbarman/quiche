@@ -2,10 +2,37 @@ use ordered_float::OrderedFloat;
 use rand_distr::{Distribution, Normal, Uniform};
 use std::collections::BTreeMap;
 use std::fmt;
+use std::str::FromStr;
 use std::time::Duration;
 use std::time::SystemTime;
 
 const INFINITY_BIN: f32 = -1f32;
+
+/// Available padding algorithms.
+/// algorithms.#[derive(Debug, Copy, Clone, PartialEq)]
+#[repr(C)]
+pub enum PaddingAlgorithm {
+    /// No padding / no dummies are added. `none` in a string form.
+    None = 0,
+    /// WTF-PAD algorithm. `wtfpad` in a string form.
+    Wtfpad = 1,
+}
+
+impl FromStr for PaddingAlgorithm {
+    type Err = crate::Error;
+
+    /// Converts a string to `PaddingAlgorithm`.
+    ///
+    /// If `name` is not valid, returns the "None" strategy
+    fn from_str(name: &str) -> std::result::Result<Self, Self::Err> {
+        match name {
+            "none" => Ok(PaddingAlgorithm::None),
+            "wtfpad" => Ok(PaddingAlgorithm::Wtfpad),
+
+            _ => Ok(PaddingAlgorithm::None),
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 enum State {
@@ -27,6 +54,21 @@ struct WTFPADConfig {
     padded_size: usize,
 }
 
+impl WTFPAD {
+    fn new(
+        config: WTFPADConfig, config_gap: AdaptiveHistogramConfig,
+        config_burst: AdaptiveHistogramConfig,
+    ) -> WTFPAD {
+        WTFPAD {
+            config,
+            state: State::Idle,
+            state_timeout: None,
+            histogram_gap: AdaptiveHistogram::new(config_gap),
+            histogram_burst: AdaptiveHistogram::new(config_burst),
+        }
+    }
+}
+
 impl Default for WTFPAD {
     fn default() -> Self {
         WTFPAD::new(
@@ -46,20 +88,13 @@ impl Default for WTFPAD {
     }
 }
 
-impl WTFPAD {
-    pub fn new(
-        config: WTFPADConfig, config_gap: AdaptiveHistogramConfig,
-        config_burst: AdaptiveHistogramConfig,
-    ) -> WTFPAD {
-        WTFPAD {
-            config,
-            state: State::Idle,
-            state_timeout: None,
-            histogram_gap: AdaptiveHistogram::new(config_gap),
-            histogram_burst: AdaptiveHistogram::new(config_burst),
-        }
-    }
+trait Padding {
+    fn pad_individual(&self, size: usize) -> usize;
+    fn update_state(&mut self, packet_sent: bool, is_dummy: bool);
+    fn next_dummy(&mut self) -> Option<(SystemTime, usize)>;
+}
 
+impl Padding for WTFPAD {
     /// Simply returns the configured fixed size. The implementation using WTFPAD is responsible for producing a packet of this length.
     fn pad_individual(&self, _size: usize) -> usize {
         self.config.padded_size
