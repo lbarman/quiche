@@ -319,24 +319,24 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[repr(C)]
 pub enum Error {
     /// There is no more work to do.
-    Done = -1,
+    Done               = -1,
 
     /// The provided buffer is too short.
-    BufferTooShort = -2,
+    BufferTooShort     = -2,
 
     /// The provided packet cannot be parsed because its version is unknown.
-    UnknownVersion = -3,
+    UnknownVersion     = -3,
 
     /// The provided packet cannot be parsed because it contains an invalid
     /// frame.
-    InvalidFrame = -4,
+    InvalidFrame       = -4,
 
     /// The provided packet cannot be parsed.
-    InvalidPacket = -5,
+    InvalidPacket      = -5,
 
     /// The operation cannot be completed because the connection is in an
     /// invalid state.
-    InvalidState = -6,
+    InvalidState       = -6,
 
     /// The operation cannot be completed because the stream is in an
     /// invalid state.
@@ -346,22 +346,22 @@ pub enum Error {
     InvalidTransportParam = -8,
 
     /// A cryptographic operation failed.
-    CryptoFail = -9,
+    CryptoFail         = -9,
 
     /// The TLS handshake failed.
-    TlsFail = -10,
+    TlsFail            = -10,
 
     /// The peer violated the local flow control limits.
-    FlowControl = -11,
+    FlowControl        = -11,
 
     /// The peer violated the local stream limits.
-    StreamLimit = -12,
+    StreamLimit        = -12,
 
     /// The received data exceeds the stream's final size.
-    FinalSize = -13,
+    FinalSize          = -13,
 
     /// Error in congestion control.
-    CongestionControl = -14,
+    CongestionControl  = -14,
 }
 
 impl Error {
@@ -409,7 +409,7 @@ impl std::convert::From<octets::BufferTooShortError> for Error {
 #[repr(C)]
 pub enum Shutdown {
     /// Stop receiving stream data.
-    Read = 0,
+    Read  = 0,
 
     /// Stop sending stream data.
     Write = 1,
@@ -1068,9 +1068,9 @@ pub fn retry(
 /// Returns true if the given protocol version is supported.
 pub fn version_is_supported(version: u32) -> bool {
     match version {
-        PROTOCOL_VERSION_DRAFT27
-        | PROTOCOL_VERSION_DRAFT28
-        | PROTOCOL_VERSION_DRAFT29 => true,
+        PROTOCOL_VERSION_DRAFT27 |
+        PROTOCOL_VERSION_DRAFT28 |
+        PROTOCOL_VERSION_DRAFT29 => true,
 
         _ => false,
     }
@@ -1401,7 +1401,7 @@ impl Connection {
                     // the connection.
                     self.close(false, e.to_wire(), b"").ok();
                     return Err(e);
-                }
+                },
             };
 
             done += read;
@@ -1496,7 +1496,7 @@ impl Connection {
                     // this error is quite useful for debugging, so don't just
                     // ignore the packet.
                     return Err(Error::UnknownVersion);
-                }
+                },
             };
 
             self.did_version_negotiation = true;
@@ -1630,8 +1630,8 @@ impl Connection {
         let epoch = hdr.ty.to_epoch()?;
 
         // TODO: somehow deal with re-ordered 0-RTT data.
-        let aead = if hdr.ty == packet::Type::ZeroRTT
-            && self.pkt_num_spaces[epoch].crypto_0rtt_open.is_some()
+        let aead = if hdr.ty == packet::Type::ZeroRTT &&
+            self.pkt_num_spaces[epoch].crypto_0rtt_open.is_some()
         {
             // TODO: buffer 0-RTT packets instead of discarding when key is not
             // available yet, as an optimization.
@@ -1653,14 +1653,13 @@ impl Connection {
                 //
                 // TODO: buffer 1-RTT packets instead of discarding when key is
                 // not available yet, as an optimization.
-                None => {
+                None =>
                     return Err(drop_pkt_on_err(
                         Error::CryptoFail,
                         self.recv_count,
                         self.is_server,
                         &self.trace_id,
-                    ))
-                }
+                    )),
             }
         };
 
@@ -1821,14 +1820,14 @@ impl Connection {
                             .recv_pkt_need_ack
                             .remove_until(largest_acked);
                     }
-                }
+                },
 
                 frame::Frame::Crypto { data } => {
                     self.pkt_num_spaces[epoch]
                         .crypto_stream
                         .send
                         .ack(data.off(), data.len());
-                }
+                },
 
                 frame::Frame::Stream { stream_id, data } => {
                     let stream = match self.streams.get_mut(stream_id) {
@@ -1843,7 +1842,7 @@ impl Connection {
                         let local = stream.local;
                         self.streams.collect(stream_id, local);
                     }
-                }
+                },
 
                 _ => (),
             }
@@ -1972,7 +1971,7 @@ impl Connection {
             match lost {
                 frame::Frame::Crypto { data } => {
                     self.pkt_num_spaces[epoch].crypto_stream.send.push(data)?;
-                }
+                },
 
                 frame::Frame::Stream { stream_id, data } => {
                     let stream = match self.streams.get_mut(stream_id) {
@@ -2001,25 +2000,25 @@ impl Connection {
                             incremental,
                         );
                     }
-                }
+                },
 
                 frame::Frame::ACK { .. } => {
                     self.pkt_num_spaces[epoch].ack_elicited = true;
-                }
+                },
 
                 frame::Frame::HandshakeDone => {
                     self.handshake_done_sent = false;
-                }
+                },
 
                 frame::Frame::MaxStreamData { stream_id, .. } => {
                     if self.streams.get(stream_id).is_some() {
                         self.streams.mark_almost_full(stream_id, true);
                     }
-                }
+                },
 
                 frame::Frame::MaxData { .. } => {
                     self.almost_full = true;
-                }
+                },
 
                 _ => (),
             }
@@ -2115,7 +2114,7 @@ impl Connection {
                 // is set to false here to make cwnd grow when ACK is received.
                 self.recovery.update_app_limited(false);
                 return Err(Error::Done);
-            }
+            },
         }
 
         let mut frames: Vec<frame::Frame> = Vec::new();
@@ -2127,16 +2126,16 @@ impl Connection {
         let mut payload_len = 0;
 
         // Create ACK frame.
-        if self.pkt_num_spaces[epoch].recv_pkt_need_ack.len() > 0
-            && (self.pkt_num_spaces[epoch].ack_elicited
-                || self.recovery.loss_probes[epoch] > 0)
-            && !is_closing
+        if self.pkt_num_spaces[epoch].recv_pkt_need_ack.len() > 0 &&
+            (self.pkt_num_spaces[epoch].ack_elicited ||
+                self.recovery.loss_probes[epoch] > 0) &&
+            !is_closing
         {
             let ack_delay =
                 self.pkt_num_spaces[epoch].largest_rx_pkt_time.elapsed();
 
-            let ack_delay = ack_delay.as_micros() as u64
-                / 2_u64
+            let ack_delay = ack_delay.as_micros() as u64 /
+                2_u64
                     .pow(self.local_transport_params.ack_delay_exponent as u32);
 
             let frame = frame::Frame::ACK {
@@ -2151,9 +2150,9 @@ impl Connection {
 
         if pkt_type == packet::Type::Short && !is_closing {
             // Create HANDSHAKE_DONE frame.
-            if self.is_established()
-                && !self.handshake_done_sent
-                && self.is_server
+            if self.is_established() &&
+                !self.handshake_done_sent &&
+                self.is_server
             {
                 let frame = frame::Frame::HandshakeDone;
 
@@ -2232,7 +2231,7 @@ impl Connection {
                         // the almost full set.
                         self.streams.mark_almost_full(stream_id, false);
                         continue;
-                    }
+                    },
                 };
 
                 let frame = frame::Frame::MaxStreamData {
@@ -2316,9 +2315,9 @@ impl Connection {
         }
 
         // Create CRYPTO frame.
-        if self.pkt_num_spaces[epoch].crypto_stream.is_flushable()
-            && left > frame::MAX_CRYPTO_OVERHEAD
-            && !is_closing
+        if self.pkt_num_spaces[epoch].crypto_stream.is_flushable() &&
+            left > frame::MAX_CRYPTO_OVERHEAD &&
+            !is_closing
         {
             let crypto_len = left - frame::MAX_CRYPTO_OVERHEAD;
             let crypto_buf = self.pkt_num_spaces[epoch]
@@ -2336,9 +2335,9 @@ impl Connection {
         }
 
         // Create a single STREAM frame for the first stream that is flushable.
-        if pkt_type == packet::Type::Short
-            && left > frame::MAX_STREAM_OVERHEAD
-            && !is_closing
+        if pkt_type == packet::Type::Short &&
+            left > frame::MAX_STREAM_OVERHEAD &&
+            !is_closing
         {
             while let Some(stream_id) = self.streams.pop_flushable() {
                 let stream = match self.streams.get_mut(stream_id) {
@@ -2352,10 +2351,10 @@ impl Connection {
                 // Try to accurately account for the STREAM frame's overhead,
                 // such that we can fill as much of the packet buffer as
                 // possible.
-                let overhead = 1
-                    + octets::varint_len(stream_id)
-                    + octets::varint_len(off)
-                    + octets::varint_len(left as u64);
+                let overhead = 1 +
+                    octets::varint_len(stream_id) +
+                    octets::varint_len(off) +
+                    octets::varint_len(left as u64);
 
                 let max_len = match left.checked_sub(overhead) {
                     Some(v) => v,
@@ -2400,10 +2399,10 @@ impl Connection {
         }
 
         // Create PING for PTO probe if no other ack-elicitng frame is sent.
-        if self.recovery.loss_probes[epoch] > 0
-            && !ack_eliciting
-            && left >= 1
-            && !is_closing
+        if self.recovery.loss_probes[epoch] > 0 &&
+            !ack_eliciting &&
+            left >= 1 &&
+            !is_closing
         {
             let frame = frame::Frame::Ping;
 
@@ -2605,8 +2604,8 @@ impl Connection {
         &mut self, stream_id: u64, out: &mut [u8],
     ) -> Result<(usize, bool)> {
         // We can't read on our own unidirectional streams.
-        if !stream::is_bidi(stream_id)
-            && stream::is_local(stream_id, self.is_server)
+        if !stream::is_bidi(stream_id) &&
+            stream::is_local(stream_id, self.is_server)
         {
             return Err(Error::InvalidStreamState);
         }
@@ -2703,8 +2702,8 @@ impl Connection {
         &mut self, stream_id: u64, buf: &[u8], fin: bool,
     ) -> Result<usize> {
         // We can't write on the peer's unidirectional streams.
-        if !stream::is_bidi(stream_id)
-            && !stream::is_local(stream_id, self.is_server)
+        if !stream::is_bidi(stream_id) &&
+            !stream::is_local(stream_id, self.is_server)
         {
             return Err(Error::InvalidStreamState);
         }
@@ -2850,7 +2849,7 @@ impl Connection {
 
                 // Once shutdown, the stream is guaranteed to be non-readable.
                 self.streams.mark_readable(stream_id, false);
-            }
+            },
 
             // TODO: send RESET_STREAM
             Shutdown::Write => {
@@ -2858,7 +2857,7 @@ impl Connection {
 
                 // Once shutdown, the stream is guaranteed to be non-writable.
                 self.streams.mark_writable(stream_id, false);
-            }
+            },
         }
 
         Ok(())
@@ -3291,14 +3290,14 @@ impl Connection {
 
         // If there are flushable, almost full or blocked streams, use the
         // Application epoch.
-        if (self.is_established() || self.is_in_early_data())
-            && (self.almost_full
-                || self.blocked_limit.is_some()
-                || self.streams.should_update_max_streams_bidi()
-                || self.streams.should_update_max_streams_uni()
-                || self.streams.has_flushable()
-                || self.streams.has_almost_full()
-                || self.streams.has_blocked())
+        if (self.is_established() || self.is_in_early_data()) &&
+            (self.almost_full ||
+                self.blocked_limit.is_some() ||
+                self.streams.should_update_max_streams_bidi() ||
+                self.streams.should_update_max_streams_uni() ||
+                self.streams.has_flushable() ||
+                self.streams.has_almost_full() ||
+                self.streams.has_blocked())
         {
             return Ok(packet::EPOCH_APPLICATION);
         }
@@ -3363,7 +3362,7 @@ impl Connection {
                 if self.handshake_confirmed {
                     self.drop_epoch_state(packet::EPOCH_HANDSHAKE, now);
                 }
-            }
+            },
 
             frame::Frame::ResetStream {
                 stream_id,
@@ -3371,8 +3370,8 @@ impl Connection {
                 ..
             } => {
                 // Peer can't send on our unidirectional streams.
-                if !stream::is_bidi(stream_id)
-                    && stream::is_local(stream_id, self.is_server)
+                if !stream::is_bidi(stream_id) &&
+                    stream::is_local(stream_id, self.is_server)
                 {
                     return Err(Error::InvalidStreamState);
                 }
@@ -3400,16 +3399,16 @@ impl Connection {
                 if self.rx_data > self.max_rx_data {
                     return Err(Error::FlowControl);
                 }
-            }
+            },
 
             frame::Frame::StopSending { stream_id, .. } => {
                 // STOP_SENDING on a receive-only stream is a fatal error.
-                if !stream::is_local(stream_id, self.is_server)
-                    && !stream::is_bidi(stream_id)
+                if !stream::is_local(stream_id, self.is_server) &&
+                    !stream::is_bidi(stream_id)
                 {
                     return Err(Error::InvalidStreamState);
                 }
-            }
+            },
 
             frame::Frame::Crypto { data } => {
                 // Push the data to the stream so it can be re-ordered.
@@ -3445,9 +3444,8 @@ impl Connection {
                     if self.version >= PROTOCOL_VERSION_DRAFT28 {
                         // Validate initial_source_connection_id.
                         match &peer_params.initial_source_connection_id {
-                            Some(v) if v != &self.dcid => {
-                                return Err(Error::InvalidTransportParam)
-                            }
+                            Some(v) if v != &self.dcid =>
+                                return Err(Error::InvalidTransportParam),
 
                             Some(_) => (),
 
@@ -3460,17 +3458,15 @@ impl Connection {
                         if let Some(odcid) = &self.odcid {
                             match &peer_params.original_destination_connection_id
                             {
-                                Some(v) if v != odcid => {
-                                    return Err(Error::InvalidTransportParam)
-                                }
+                                Some(v) if v != odcid =>
+                                    return Err(Error::InvalidTransportParam),
 
                                 Some(_) => (),
 
                                 // original_destination_connection_id must be
                                 // sent by the server.
-                                None if !self.is_server => {
-                                    return Err(Error::InvalidTransportParam)
-                                }
+                                None if !self.is_server =>
+                                    return Err(Error::InvalidTransportParam),
 
                                 None => (),
                             }
@@ -3479,9 +3475,8 @@ impl Connection {
                         // Validate retry_source_connection_id.
                         if let Some(rscid) = &self.rscid {
                             match &peer_params.retry_source_connection_id {
-                                Some(v) if v != rscid => {
-                                    return Err(Error::InvalidTransportParam)
-                                }
+                                Some(v) if v != rscid =>
+                                    return Err(Error::InvalidTransportParam),
 
                                 Some(_) => (),
 
@@ -3493,9 +3488,9 @@ impl Connection {
                     } else {
                         // Legacy validation of the original connection ID when
                         // stateless retry is performed, for drafts < 28.
-                        if self.did_retry
-                            && peer_params.original_destination_connection_id
-                                != self.odcid
+                        if self.did_retry &&
+                            peer_params.original_destination_connection_id !=
+                                self.odcid
                         {
                             return Err(Error::InvalidTransportParam);
                         }
@@ -3518,15 +3513,15 @@ impl Connection {
 
                     self.parsed_peer_transport_params = true;
                 }
-            }
+            },
 
             // TODO: implement stateless retry
             frame::Frame::NewToken { .. } => (),
 
             frame::Frame::Stream { stream_id, data } => {
                 // Peer can't send on our unidirectional streams.
-                if !stream::is_bidi(stream_id)
-                    && stream::is_local(stream_id, self.is_server)
+                if !stream::is_bidi(stream_id) &&
+                    stream::is_local(stream_id, self.is_server)
                 {
                     return Err(Error::InvalidStreamState);
                 }
@@ -3563,11 +3558,11 @@ impl Connection {
                 }
 
                 self.rx_data += data_len;
-            }
+            },
 
             frame::Frame::MaxData { max } => {
                 self.max_tx_data = cmp::max(self.max_tx_data, max);
-            }
+            },
 
             frame::Frame::MaxStreamData { stream_id, max } => {
                 // Get existing stream or create a new one, but if the stream
@@ -3605,7 +3600,7 @@ impl Connection {
                 if writable {
                     self.streams.mark_writable(stream_id, true);
                 }
-            }
+            },
 
             frame::Frame::MaxStreamsBidi { max } => {
                 if max > MAX_STREAM_ID {
@@ -3613,7 +3608,7 @@ impl Connection {
                 }
 
                 self.streams.update_peer_max_streams_bidi(max);
-            }
+            },
 
             frame::Frame::MaxStreamsUni { max } => {
                 if max > MAX_STREAM_ID {
@@ -3621,23 +3616,21 @@ impl Connection {
                 }
 
                 self.streams.update_peer_max_streams_uni(max);
-            }
+            },
 
             frame::Frame::DataBlocked { .. } => (),
 
             frame::Frame::StreamDataBlocked { .. } => (),
 
-            frame::Frame::StreamsBlockedBidi { limit } => {
+            frame::Frame::StreamsBlockedBidi { limit } =>
                 if limit > MAX_STREAM_ID {
                     return Err(Error::InvalidFrame);
-                }
-            }
+                },
 
-            frame::Frame::StreamsBlockedUni { limit } => {
+            frame::Frame::StreamsBlockedUni { limit } =>
                 if limit > MAX_STREAM_ID {
                     return Err(Error::InvalidFrame);
-                }
-            }
+                },
 
             // TODO: implement connection migration
             frame::Frame::NewConnectionId { .. } => (),
@@ -3647,17 +3640,17 @@ impl Connection {
 
             frame::Frame::PathChallenge { data } => {
                 self.challenge = Some(data);
-            }
+            },
 
             frame::Frame::PathResponse { .. } => (),
 
             frame::Frame::ConnectionClose { .. } => {
                 self.draining_timer = Some(now + (self.recovery.pto() * 3));
-            }
+            },
 
             frame::Frame::ApplicationClose { .. } => {
                 self.draining_timer = Some(now + (self.recovery.pto() * 3));
-            }
+            },
 
             frame::Frame::HandshakeDone => {
                 if self.is_server {
@@ -3670,7 +3663,7 @@ impl Connection {
 
                 // Once the handshake is confirmed, we can drop Handshake keys.
                 self.drop_epoch_state(packet::EPOCH_HANDSHAKE, now);
-            }
+            },
         }
 
         Ok(())
@@ -3700,8 +3693,8 @@ impl Connection {
     /// This happens when the new max data limit is at least double the amount
     /// of data that can be received before blocking.
     fn should_update_max_data(&self) -> bool {
-        self.max_rx_data_next != self.max_rx_data
-            && self.max_rx_data_next / 2 > self.max_rx_data - self.rx_data
+        self.max_rx_data_next != self.max_rx_data &&
+            self.max_rx_data_next / 2 > self.max_rx_data - self.rx_data
     }
 
     /// Returns the idle timeout value.
@@ -3711,8 +3704,8 @@ impl Connection {
         // If the transport parameter is set to 0, then the respective endpoint
         // decided to disable the idle timeout. If both are disabled we should
         // not set any timeout.
-        if self.local_transport_params.max_idle_timeout == 0
-            && self.peer_transport_params.max_idle_timeout == 0
+        if self.local_transport_params.max_idle_timeout == 0 &&
+            self.peer_transport_params.max_idle_timeout == 0
         {
             return None;
         }
@@ -3895,11 +3888,11 @@ impl TransportParams {
                     }
 
                     tp.original_destination_connection_id = Some(val.to_vec());
-                }
+                },
 
                 0x0001 => {
                     tp.max_idle_timeout = val.get_varint()?;
-                }
+                },
 
                 0x0002 => {
                     if is_server {
@@ -3907,7 +3900,7 @@ impl TransportParams {
                     }
 
                     tp.stateless_reset_token = Some(val.get_bytes(16)?.to_vec());
-                }
+                },
 
                 0x0003 => {
                     tp.max_udp_payload_size = val.get_varint()?;
@@ -3915,23 +3908,23 @@ impl TransportParams {
                     if tp.max_udp_payload_size < 1200 {
                         return Err(Error::InvalidTransportParam);
                     }
-                }
+                },
 
                 0x0004 => {
                     tp.initial_max_data = val.get_varint()?;
-                }
+                },
 
                 0x0005 => {
                     tp.initial_max_stream_data_bidi_local = val.get_varint()?;
-                }
+                },
 
                 0x0006 => {
                     tp.initial_max_stream_data_bidi_remote = val.get_varint()?;
-                }
+                },
 
                 0x0007 => {
                     tp.initial_max_stream_data_uni = val.get_varint()?;
-                }
+                },
 
                 0x0008 => {
                     let max = val.get_varint()?;
@@ -3941,7 +3934,7 @@ impl TransportParams {
                     }
 
                     tp.initial_max_streams_bidi = max;
-                }
+                },
 
                 0x0009 => {
                     let max = val.get_varint()?;
@@ -3951,7 +3944,7 @@ impl TransportParams {
                     }
 
                     tp.initial_max_streams_uni = max;
-                }
+                },
 
                 0x000a => {
                     let ack_delay_exponent = val.get_varint()?;
@@ -3961,7 +3954,7 @@ impl TransportParams {
                     }
 
                     tp.ack_delay_exponent = ack_delay_exponent;
-                }
+                },
 
                 0x000b => {
                     let max_ack_delay = val.get_varint()?;
@@ -3971,11 +3964,11 @@ impl TransportParams {
                     }
 
                     tp.max_ack_delay = max_ack_delay;
-                }
+                },
 
                 0x000c => {
                     tp.disable_active_migration = true;
-                }
+                },
 
                 0x000d => {
                     if is_server {
@@ -3983,7 +3976,7 @@ impl TransportParams {
                     }
 
                     // TODO: decode preferred_address
-                }
+                },
 
                 0x000e => {
                     let limit = val.get_varint()?;
@@ -3993,11 +3986,11 @@ impl TransportParams {
                     }
 
                     tp.active_conn_id_limit = limit;
-                }
+                },
 
                 0x000f => {
                     tp.initial_source_connection_id = Some(val.to_vec());
-                }
+                },
 
                 0x00010 => {
                     if is_server {
@@ -4005,7 +3998,7 @@ impl TransportParams {
                     }
 
                     tp.retry_source_connection_id = Some(val.to_vec());
-                }
+                },
 
                 // Ignore unknown parameters.
                 _ => (),
@@ -4429,8 +4422,8 @@ pub mod testing {
 
         hdr.to_bytes(&mut b)?;
 
-        let payload_len = frames.iter().fold(0, |acc, x| acc + x.wire_len())
-            + space.crypto_overhead().unwrap();
+        let payload_len = frames.iter().fold(0, |acc, x| acc + x.wire_len()) +
+            space.crypto_overhead().unwrap();
 
         if pkt_type != packet::Type::Short {
             let len = pn_len + payload_len;
@@ -5858,8 +5851,8 @@ mod tests {
         let space = &mut pipe.client.pkt_num_spaces[epoch];
 
         // Use correct payload length when encrypting the packet.
-        let payload_len = frames.iter().fold(0, |acc, x| acc + x.wire_len())
-            + space.crypto_overhead().unwrap();
+        let payload_len = frames.iter().fold(0, |acc, x| acc + x.wire_len()) +
+            space.crypto_overhead().unwrap();
 
         let aead = space.crypto_seal.as_ref().unwrap();
 
@@ -6794,13 +6787,10 @@ mod tests {
                 testing::decode_pkt(&mut pipe.client, &mut buf, len).unwrap();
             let stream = frames.iter().next().unwrap();
 
-            assert_eq!(
-                stream,
-                &frame::Frame::Stream {
-                    stream_id: 8,
-                    data: stream::RangeBuf::from(&out, off, false),
-                }
-            );
+            assert_eq!(stream, &frame::Frame::Stream {
+                stream_id: 8,
+                data: stream::RangeBuf::from(&out, off, false),
+            });
 
             off = match stream {
                 frame::Frame::Stream { data, .. } => data.max_off(),
@@ -6819,13 +6809,10 @@ mod tests {
                 testing::decode_pkt(&mut pipe.client, &mut buf, len).unwrap();
             let stream = frames.iter().next().unwrap();
 
-            assert_eq!(
-                stream,
-                &frame::Frame::Stream {
-                    stream_id: 16,
-                    data: stream::RangeBuf::from(&out, off, false),
-                }
-            );
+            assert_eq!(stream, &frame::Frame::Stream {
+                stream_id: 16,
+                data: stream::RangeBuf::from(&out, off, false),
+            });
 
             off = match stream {
                 frame::Frame::Stream { data, .. } => data.max_off(),
@@ -6844,13 +6831,10 @@ mod tests {
                 testing::decode_pkt(&mut pipe.client, &mut buf, len).unwrap();
             let stream = frames.iter().next().unwrap();
 
-            assert_eq!(
-                stream,
-                &frame::Frame::Stream {
-                    stream_id: 20,
-                    data: stream::RangeBuf::from(&out, off, false),
-                }
-            );
+            assert_eq!(stream, &frame::Frame::Stream {
+                stream_id: 20,
+                data: stream::RangeBuf::from(&out, off, false),
+            });
 
             off = match stream {
                 frame::Frame::Stream { data, .. } => data.max_off(),
@@ -6883,13 +6867,10 @@ mod tests {
 
             let stream = frames.iter().next().unwrap();
 
-            assert_eq!(
-                stream,
-                &frame::Frame::Stream {
-                    stream_id: 4,
-                    data: stream::RangeBuf::from(&out, off, false),
-                }
-            );
+            assert_eq!(stream, &frame::Frame::Stream {
+                stream_id: 4,
+                data: stream::RangeBuf::from(&out, off, false),
+            });
 
             off = match stream {
                 frame::Frame::Stream { data, .. } => data.max_off(),
@@ -6908,13 +6889,10 @@ mod tests {
                 testing::decode_pkt(&mut pipe.client, &mut buf, len).unwrap();
             let stream = frames.iter().next().unwrap();
 
-            assert_eq!(
-                stream,
-                &frame::Frame::Stream {
-                    stream_id: 0,
-                    data: stream::RangeBuf::from(&out, off, false),
-                }
-            );
+            assert_eq!(stream, &frame::Frame::Stream {
+                stream_id: 0,
+                data: stream::RangeBuf::from(&out, off, false),
+            });
 
             off = match stream {
                 frame::Frame::Stream { data, .. } => data.max_off(),
