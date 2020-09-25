@@ -287,9 +287,6 @@ pub const MAX_CONN_ID_LEN: usize = crate::packet::MAX_CID_LEN as usize;
 /// The minimum length of Initial packets sent by a client.
 pub const MIN_CLIENT_INITIAL_LEN: usize = 1200;
 
-#[cfg(not(feature = "fuzzing"))]
-const PAYLOAD_MIN_LEN: usize = 4;
-
 #[cfg(feature = "fuzzing")]
 // Due to the fact that in fuzzing mode we use a zero-length AEAD tag (which
 // would normally be 16 bytes), we need to adjust the minimum payload size to
@@ -429,6 +426,8 @@ pub struct Config {
 
     cc_algorithm: CongestionControlAlgorithm,
 
+    padding_algorithm: PaddingAlgorithm,
+
     hystart: bool,
 }
 
@@ -451,6 +450,7 @@ impl Config {
             application_protos: Vec::new(),
             grease: true,
             cc_algorithm: CongestionControlAlgorithm::CUBIC,
+            padding_algorithm: PaddingAlgorithm::None,
             hystart: true,
         })
     }
@@ -732,6 +732,30 @@ impl Config {
         self.cc_algorithm = algo;
     }
 
+    /// Sets the padding algorithm used by string.
+    ///
+    /// The default value is `none`.
+    ///
+    /// ## Examples:
+    ///
+    /// ```
+    /// # let mut config = quiche::Config::new(0xbabababa)?;
+    /// config.set_padding_algorithm_name("wtfpad");
+    /// # Ok::<(), quiche::Error>(())
+    /// ```
+    pub fn set_padding_algorithm_name(&mut self, name: &str) -> Result<()> {
+        self.padding_algorithm = PaddingAlgorithm::from_str(name)?;
+
+        Ok(())
+    }
+
+    /// Sets the padding algorithm used.
+    ///
+    /// The default value is `PaddingAlgorithm::None`.
+    pub fn set_padding_algorithm(&mut self, algo: PaddingAlgorithm) {
+        self.padding_algorithm = algo;
+    }
+
     /// Configures whether to enable HyStart++.
     ///
     /// The default value is `true`.
@@ -887,6 +911,9 @@ pub struct Connection {
     /// Whether peer transport parameters were qlogged.
     #[cfg(feature = "qlog")]
     qlogged_peer_params: bool,
+
+    /// The padding algorithm used. See `padding.rs`
+    padding_algorithm: Box<dyn Padding + Send>, //TODO: it seems weird to that the whole object is Send. It is certainly not thread-safe yet
 }
 
 /// Creates a new server-side connection.
@@ -1194,6 +1221,8 @@ impl Connection {
 
             #[cfg(feature = "qlog")]
             qlogged_peer_params: false,
+
+            padding_algorithm: Box::new(NonePadding {}),
         });
 
         if let Some(odcid) = odcid {
@@ -2407,10 +2436,11 @@ impl Connection {
             in_flight = true;
         }
 
-        // Pad payload so that it's always at least 4 bytes.
-        if payload_len < PAYLOAD_MIN_LEN {
+        // Pad payload following the padding_algorithm strategy
+        let padded_size = self.padding_algorithm.pad_individual(payload_len);
+        if payload_len < padded_size {
             let frame = frame::Frame::Padding {
-                len: PAYLOAD_MIN_LEN - payload_len,
+                len: padded_size - payload_len,
             };
 
             payload_len += frame.wire_len();
@@ -2512,6 +2542,15 @@ impl Connection {
             now,
             &self.trace_id,
         );
+
+        let event = if has_data {
+            PaddingStateEvent::SentRealPacket
+        } else {
+            PaddingStateEvent::SentDummyOrTimeoutTriggered
+        };
+        self.padding_algorithm.update_state(now, event);
+        // this will update the timeout self.padding_algorithm.next_dummy()
+        self.padding_algorithm.sample_next_dummy(now);
 
         qlog_with!(self.qlog_streamer, q, {
             let ev = self.recovery.to_qlog();
@@ -2984,6 +3023,7 @@ impl Connection {
             return None;
         }
 
+        let now = time::Instant::now();
         let timeout = if self.draining_timer.is_some() {
             // Draining timer takes precedence over all other timers. If it is
             // set it means the connection is closing so there's no point in
@@ -2994,13 +3034,12 @@ impl Connection {
             // detection timers. If they are both unset (i.e. `None`) then the
             // result is `None`, but if at least one of them is set then a
             // `Some(...)` value is returned.
-            let timers = [self.idle_timer, self.recovery.loss_detection_timer()];
+            let timers = [self.idle_timer, self.recovery.loss_detection_timer(), self.padding_algorithm.next_dummy()];
 
             timers.iter().filter_map(|&x| x).min()
         };
 
         if let Some(timeout) = timeout {
-            let now = time::Instant::now();
 
             if timeout <= now {
                 return Some(time::Duration::new(0, 0));
@@ -7131,6 +7170,7 @@ mod tests {
 
 pub use crate::packet::Header;
 pub use crate::packet::Type;
+pub use crate::padding::{NonePadding, Padding, PaddingAlgorithm, PaddingStateEvent};
 pub use crate::recovery::CongestionControlAlgorithm;
 pub use crate::stream::StreamIter;
 
@@ -7141,6 +7181,7 @@ pub mod h3;
 mod minmax;
 mod octets;
 mod packet;
+mod padding;
 mod rand;
 mod ranges;
 mod recovery;
