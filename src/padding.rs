@@ -55,7 +55,10 @@ pub trait Padding {
     fn update_state(&mut self, now: std::time::Instant, event: PaddingStateEvent);
 
     /// Updates the internal state. Should be called when a timeout is fired or a packet is sent.
-    fn next_dummy(&mut self, now: std::time::Instant) -> Option<std::time::Instant>;
+    fn sample_next_dummy(&mut self, now: std::time::Instant) -> Option<std::time::Instant>;
+
+    /// Simply stores the timeout sampled in `sample_next_dummy`
+    fn next_dummy(&self) -> Option<std::time::Instant>;
 }
 
 /// A transparent padding algorithm that only pads individual packets to PAYLOAD_MIN_LENGTH = 4B
@@ -71,7 +74,11 @@ impl Padding for NonePadding {
 
     fn update_state(&mut self, _now: std::time::Instant, _event: PaddingStateEvent) {}
 
-    fn next_dummy(&mut self, _now: std::time::Instant) -> Option<std::time::Instant> {
+    fn sample_next_dummy(&mut self, _now: std::time::Instant) -> Option<std::time::Instant> {
+        None
+    }
+
+    fn next_dummy(&self) -> Option<std::time::Instant> {
         None
     }
 }
@@ -160,7 +167,7 @@ impl Padding for WTFPAD {
     }
 
     /// Returns the time at which the next dummy packet should be sent. Alters self.state_timeout with the returned timeout, if any
-    fn next_dummy(&mut self, now: std::time::Instant,) -> Option<std::time::Instant> {
+    fn sample_next_dummy(&mut self, now: std::time::Instant,) -> Option<std::time::Instant> {
         match self.state {
             State::Burst => {
                 let timeout =
@@ -176,6 +183,10 @@ impl Padding for WTFPAD {
             }
             State::Idle => None,
         }
+    }
+
+    fn next_dummy(&self) -> Option<std::time::Instant> {
+        self.state_timeout
     }
 }
 
@@ -431,7 +442,7 @@ mod tests {
         let now = std::time::Instant::now();
         let mut w: WTFPAD = Default::default();
         w.state = State::Burst;
-        let dummy = w.next_dummy(now);
+        let dummy = w.sample_next_dummy(now);
         assert!(dummy.is_some());
     }
 
@@ -454,10 +465,10 @@ mod tests {
         let now = std::time::Instant::now();
         let mut w: WTFPAD = Default::default();
         w.state = State::Burst;
-        let dummy = w.next_dummy(now);
+        let dummy = w.sample_next_dummy(now);
         assert!(dummy.is_some());
 
-        match w.next_dummy(now) {
+        match w.sample_next_dummy(now) {
             Some(i) => println!("{:?}", i),
             None => println!("No dummy drawn"),
         }
