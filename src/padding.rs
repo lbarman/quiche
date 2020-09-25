@@ -55,7 +55,7 @@ pub trait Padding {
     fn update_state(&mut self, now: std::time::Instant, event: PaddingStateEvent);
 
     /// Updates the internal state. Should be called when a timeout is fired or a packet is sent.
-    fn next_dummy(&mut self, now: std::time::Instant) -> Option<(std::time::Instant, usize)>;
+    fn next_dummy(&mut self, now: std::time::Instant) -> Option<std::time::Instant>;
 }
 
 /// A transparent padding algorithm that only pads individual packets to PAYLOAD_MIN_LENGTH = 4B
@@ -71,7 +71,7 @@ impl Padding for NonePadding {
 
     fn update_state(&mut self, _now: std::time::Instant, _event: PaddingStateEvent) {}
 
-    fn next_dummy(&mut self, _now: std::time::Instant) -> Option<(std::time::Instant, usize)> {
+    fn next_dummy(&mut self, _now: std::time::Instant) -> Option<std::time::Instant> {
         None
     }
 }
@@ -160,19 +160,19 @@ impl Padding for WTFPAD {
     }
 
     /// Returns the time at which the next dummy packet should be sent. Alters self.state_timeout with the returned timeout, if any
-    fn next_dummy(&mut self, now: std::time::Instant,) -> Option<(std::time::Instant, usize)> {
+    fn next_dummy(&mut self, now: std::time::Instant,) -> Option<std::time::Instant> {
         match self.state {
             State::Burst => {
                 let timeout =
                     timeout_to_future_unixtime(now, self.histogram_burst.sample());
                 self.state_timeout = Some(timeout);
-                Some((timeout, self.config.padded_size))
+                Some(timeout)
             }
             State::Gap => {
                 let timeout =
                     timeout_to_future_unixtime(now, self.histogram_gap.sample());
                 self.state_timeout = Some(timeout);
-                Some((timeout, self.config.padded_size))
+                Some(timeout)
             }
             State::Idle => None,
         }
@@ -458,7 +458,7 @@ mod tests {
         assert!(dummy.is_some());
 
         match w.next_dummy(now) {
-            Some(i) => println!("{:?}, {}", i.0, i.1),
+            Some(i) => println!("{:?}", i),
             None => println!("No dummy drawn"),
         }
     }
