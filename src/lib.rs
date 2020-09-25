@@ -287,9 +287,6 @@ pub const MAX_CONN_ID_LEN: usize = crate::packet::MAX_CID_LEN as usize;
 /// The minimum length of Initial packets sent by a client.
 pub const MIN_CLIENT_INITIAL_LEN: usize = 1200;
 
-#[cfg(not(feature = "fuzzing"))]
-const PAYLOAD_MIN_LEN: usize = 4;
-
 #[cfg(feature = "fuzzing")]
 // Due to the fact that in fuzzing mode we use a zero-length AEAD tag (which
 // would normally be 16 bytes), we need to adjust the minimum payload size to
@@ -916,7 +913,7 @@ pub struct Connection {
     qlogged_peer_params: bool,
 
     /// The padding algorithm used. See `padding.rs`
-    padding_algorithm: Box<dyn Padding>,
+    padding_algorithm: Box<dyn Padding + Send>,
 }
 
 /// Creates a new server-side connection.
@@ -2439,10 +2436,11 @@ impl Connection {
             in_flight = true;
         }
 
-        // Pad payload so that it's always at least 4 bytes.
-        if payload_len < PAYLOAD_MIN_LEN {
+        // Pad payload following the padding_algorithm strategy
+        let padded_size = self.padding_algorithm.pad_individual(payload_len);
+        if payload_len < padded_size {
             let frame = frame::Frame::Padding {
-                len: PAYLOAD_MIN_LEN - payload_len,
+                len: padded_size - payload_len,
             };
 
             payload_len += frame.wire_len();

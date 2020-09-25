@@ -6,6 +6,8 @@ use std::str::FromStr;
 use std::time::Duration;
 use std::time::SystemTime;
 
+const PAYLOAD_MIN_LENGTH: usize = 4;
+
 const INFINITY_BIN: f32 = -1f32;
 
 /// Available padding algorithms.
@@ -51,6 +53,9 @@ pub struct NonePadding {}
 
 impl Padding for NonePadding {
     fn pad_individual(&self, size: usize) -> usize {
+        if size < PAYLOAD_MIN_LENGTH {
+            return PAYLOAD_MIN_LENGTH;
+        }
         size
     }
 
