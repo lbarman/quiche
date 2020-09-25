@@ -38,8 +38,12 @@ impl FromStr for PaddingAlgorithm {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+/// Enumerate the possible event types that can change the padding algorithm internal state
 pub enum PaddingStateEvent {
+    /// When a packet with application data has been sent
     SentRealPacket,
+
+    /// In all other cases: a dummy has been sent, a timeout has been passed or cancelled
     SentDummyOrTimeoutTriggered,
 }
 

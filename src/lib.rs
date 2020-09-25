@@ -913,7 +913,7 @@ pub struct Connection {
     qlogged_peer_params: bool,
 
     /// The padding algorithm used. See `padding.rs`
-    padding_algorithm: Box<dyn Padding + Send>,
+    padding_algorithm: Box<dyn Padding + Send>, //TODO: it seems weird to that the whole object is Send. It is certainly not thread-safe yet
 }
 
 /// Creates a new server-side connection.
