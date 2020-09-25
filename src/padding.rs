@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 use std::time::Duration;
-use std::time::SystemTime;
 
 const PAYLOAD_MIN_LENGTH: usize = 4;
 
@@ -53,10 +52,10 @@ pub trait Padding {
     fn pad_individual(&self, size: usize) -> usize;
 
     /// Returns the time at which the next dummy packet should be sent. The caller is responsible for generating a packet at the correct time.
-    fn update_state(&mut self, event: PaddingStateEvent);
+    fn update_state(&mut self, now: std::time::Instant, event: PaddingStateEvent);
 
     /// Updates the internal state. Should be called when a timeout is fired or a packet is sent.
-    fn next_dummy(&mut self) -> Option<(SystemTime, usize)>;
+    fn next_dummy(&mut self, now: std::time::Instant) -> Option<(std::time::Instant, usize)>;
 }
 
 /// A transparent padding algorithm that only pads individual packets to PAYLOAD_MIN_LENGTH = 4B
@@ -70,9 +69,9 @@ impl Padding for NonePadding {
         size
     }
 
-    fn update_state(&mut self, _event: PaddingStateEvent) {}
+    fn update_state(&mut self, _now: std::time::Instant, _event: PaddingStateEvent) {}
 
-    fn next_dummy(&mut self) -> Option<(SystemTime, usize)> {
+    fn next_dummy(&mut self, _now: std::time::Instant) -> Option<(std::time::Instant, usize)> {
         None
     }
 }
@@ -86,7 +85,7 @@ pub struct WTFPAD {
     state: State,
     histogram_gap: AdaptiveHistogram,
     histogram_burst: AdaptiveHistogram,
-    state_timeout: Option<SystemTime>,
+    state_timeout: Option<std::time::Instant>,
 }
 #[derive(Debug)]
 struct WTFPADConfig {
@@ -141,14 +140,14 @@ impl Padding for WTFPAD {
     }
 
     /// Update_state should be called: when a packet is sent/received (depending to the flow being protected), dummy or not.
-    fn update_state(&mut self, event: PaddingStateEvent) {
+    fn update_state(&mut self, now: std::time::Instant, event: PaddingStateEvent) {
         match event {
             PaddingStateEvent::SentRealPacket => {
                 // new transmission after a period of silence, switch to Burst mode
                 self.state = State::Burst;
             }
             PaddingStateEvent::SentDummyOrTimeoutTriggered => {
-                if self.state_timeout.is_some() && self.state_timeout.unwrap() < SystemTime::now()
+                if self.state_timeout.is_some() && self.state_timeout.unwrap() < now
                 {
                     if self.state == State::Burst {
                         self.state = State::Gap;
@@ -161,17 +160,17 @@ impl Padding for WTFPAD {
     }
 
     /// Returns the time at which the next dummy packet should be sent. Alters self.state_timeout with the returned timeout, if any
-    fn next_dummy(&mut self) -> Option<(SystemTime, usize)> {
+    fn next_dummy(&mut self, now: std::time::Instant,) -> Option<(std::time::Instant, usize)> {
         match self.state {
             State::Burst => {
                 let timeout =
-                    timeout_to_future_unixtime(self.histogram_burst.sample());
+                    timeout_to_future_unixtime(now, self.histogram_burst.sample());
                 self.state_timeout = Some(timeout);
                 Some((timeout, self.config.padded_size))
             }
             State::Gap => {
                 let timeout =
-                    timeout_to_future_unixtime(self.histogram_gap.sample());
+                    timeout_to_future_unixtime(now, self.histogram_gap.sample());
                 self.state_timeout = Some(timeout);
                 Some((timeout, self.config.padded_size))
             }
@@ -242,10 +241,10 @@ struct AdaptiveHistogram {
     tokens_left: u32,
 }
 
-/// converts a timeout: f32 into UnixTime corresponding to SystemTime::now() + timeout
-fn timeout_to_future_unixtime(timeout: f32) -> SystemTime {
+/// converts a timeout: f32 into an Instant corresponding to time::Instant::now() + timeout
+fn timeout_to_future_unixtime(now: std::time::Instant, timeout: f32) -> std::time::Instant {
     let timeout_ms = (timeout * 1000000.0).ceil() as u64;
-    SystemTime::now() + Duration::from_micros(timeout_ms)
+    now + Duration::from_micros(timeout_ms)
 }
 
 impl AdaptiveHistogram {
@@ -393,31 +392,31 @@ mod tests {
 
     #[test]
     fn test_wtpad_states() {
+        let now = std::time::Instant::now();
         let mut w: WTFPAD = Default::default();
         assert!(w.state == State::Idle);
 
         // sending a packet in Idle changes to Burst
         w.state = State::Idle;
-        w.update_state(PaddingStateEvent::SentRealPacket);
+        w.update_state(now, PaddingStateEvent::SentRealPacket);
         assert!(w.state == State::Burst);
 
-        let some_time_ago: SystemTime =
-            SystemTime::now() - Duration::from_millis(100);
+        let some_time_ago = std::time::Instant::now() - Duration::from_millis(100);
         w.state_timeout = Some(some_time_ago);
 
         // timeout in Burst changes to Gap
         w.state = State::Burst;
-        w.update_state(PaddingStateEvent::SentDummyOrTimeoutTriggered);
+        w.update_state(now, PaddingStateEvent::SentDummyOrTimeoutTriggered);
         assert!(w.state == State::Gap);
 
         // timeout in Gap changes to Idle
         w.state = State::Gap;
-        w.update_state(PaddingStateEvent::SentDummyOrTimeoutTriggered);
+        w.update_state(now, PaddingStateEvent::SentDummyOrTimeoutTriggered);
         assert!(w.state == State::Idle);
 
         // TODO: to check. Here the python implementation changes to Idle on packet send in Gap state
         w.state = State::Gap;
-        w.update_state(PaddingStateEvent::SentRealPacket);
+        w.update_state(now, PaddingStateEvent::SentRealPacket);
         assert!(w.state == State::Burst);
     }
 
@@ -429,20 +428,22 @@ mod tests {
 
     #[test]
     fn test_wtpad_drawing_samples() {
+        let now = std::time::Instant::now();
         let mut w: WTFPAD = Default::default();
         w.state = State::Burst;
-        let dummy = w.next_dummy();
+        let dummy = w.next_dummy(now);
         assert!(dummy.is_some());
     }
 
     #[test]
     fn test_timeout_to_systemtime() {
+        let now = std::time::Instant::now();
         let mut ah: AdaptiveHistogram = Default::default();
         ah.rebuild();
 
         let timeout_s = ah.sample();
-        let timeout_unixtime = timeout_to_future_unixtime(timeout_s);
-        let diff = timeout_unixtime.duration_since(SystemTime::now()).unwrap();
+        let timeout_unixtime = timeout_to_future_unixtime(now, timeout_s);
+        let diff = timeout_unixtime.duration_since(now);
 
         let small_tolerance = 0.001f32; // 1ms
         assert!((timeout_s - diff.as_secs_f32()).abs() < small_tolerance);
@@ -450,12 +451,13 @@ mod tests {
 
     #[test]
     fn test_wtpad() {
+        let now = std::time::Instant::now();
         let mut w: WTFPAD = Default::default();
         w.state = State::Burst;
-        let dummy = w.next_dummy();
+        let dummy = w.next_dummy(now);
         assert!(dummy.is_some());
 
-        match w.next_dummy() {
+        match w.next_dummy(now) {
             Some(i) => println!("{:?}, {}", i.0, i.1),
             None => println!("No dummy drawn"),
         }

@@ -2544,9 +2544,9 @@ impl Connection {
         );
 
         if has_data {
-            self.padding_algorithm.update_state(PaddingStateEvent::SentRealPacket);
+            self.padding_algorithm.update_state(now, PaddingStateEvent::SentRealPacket);
         } else {
-            self.padding_algorithm.update_state(PaddingStateEvent::SentDummyOrTimeoutTriggered);
+            self.padding_algorithm.update_state(now, PaddingStateEvent::SentDummyOrTimeoutTriggered);
         }
 
         qlog_with!(self.qlog_streamer, q, {
