@@ -36,7 +36,7 @@ impl FromStr for PaddingAlgorithm {
         }
     }
 }
-
+/// The Padding trait defines how to pad individual packets and generate dummies
 pub trait Padding {
     /// Takes as input a packet size, returns the desired padded size. The caller is responsible for padding the packet to this size.
     fn pad_individual(&self, size: usize) -> usize;
@@ -48,7 +48,7 @@ pub trait Padding {
     fn next_dummy(&mut self) -> Option<(SystemTime, usize)>;
 }
 
-/// A transparent padding algorithm that does nothing
+/// A transparent padding algorithm that only pads individual packets to PAYLOAD_MIN_LENGTH = 4B
 pub struct NonePadding {}
 
 impl Padding for NonePadding {
