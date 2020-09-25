@@ -36,13 +36,20 @@ impl FromStr for PaddingAlgorithm {
         }
     }
 }
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum PaddingStateEvent {
+    SentRealPacket,
+    SentDummyOrTimeoutTriggered,
+}
+
 /// The Padding trait defines how to pad individual packets and generate dummies
 pub trait Padding {
     /// Takes as input a packet size, returns the desired padded size. The caller is responsible for padding the packet to this size.
     fn pad_individual(&self, size: usize) -> usize;
 
     /// Returns the time at which the next dummy packet should be sent. The caller is responsible for generating a packet at the correct time.
-    fn update_state(&mut self, packet_sent: bool, is_dummy: bool);
+    fn update_state(&mut self, event: PaddingStateEvent);
 
     /// Updates the internal state. Should be called when a timeout is fired or a packet is sent.
     fn next_dummy(&mut self) -> Option<(SystemTime, usize)>;
@@ -59,7 +66,7 @@ impl Padding for NonePadding {
         size
     }
 
-    fn update_state(&mut self, _packet_sent: bool, _is_dummy: bool) {}
+    fn update_state(&mut self, _event: PaddingStateEvent) {}
 
     fn next_dummy(&mut self) -> Option<(SystemTime, usize)> {
         None
@@ -130,18 +137,21 @@ impl Padding for WTFPAD {
     }
 
     /// Update_state should be called: when a packet is sent/received (depending to the flow being protected), dummy or not.
-    fn update_state(&mut self, packet_sent: bool, is_dummy: bool) {
-        if packet_sent && !is_dummy {
-            // new transmission after a period of silence, switch to Burst mode
-            self.state = State::Burst;
-        // else, if this function was call by a timeout or by a dummy, check if we should "downgrade" the state
-        } else if self.state_timeout.is_some()
-            && self.state_timeout.unwrap() < SystemTime::now()
-        {
-            if self.state == State::Burst {
-                self.state = State::Gap;
-            } else if self.state == State::Gap {
-                self.state = State::Idle;
+    fn update_state(&mut self, event: PaddingStateEvent) {
+        match event {
+            PaddingStateEvent::SentRealPacket => {
+                // new transmission after a period of silence, switch to Burst mode
+                self.state = State::Burst;
+            }
+            PaddingStateEvent::SentDummyOrTimeoutTriggered => {
+                if self.state_timeout.is_some() && self.state_timeout.unwrap() < SystemTime::now()
+                {
+                    if self.state == State::Burst {
+                        self.state = State::Gap;
+                    } else if self.state == State::Gap {
+                        self.state = State::Idle;
+                    }
+                }
             }
         }
     }
@@ -384,7 +394,7 @@ mod tests {
 
         // sending a packet in Idle changes to Burst
         w.state = State::Idle;
-        w.update_state(true, false);
+        w.update_state(PaddingStateEvent::SentRealPacket);
         assert!(w.state == State::Burst);
 
         let some_time_ago: SystemTime =
@@ -393,19 +403,18 @@ mod tests {
 
         // timeout in Burst changes to Gap
         w.state = State::Burst;
-        w.update_state(false, false);
+        w.update_state(PaddingStateEvent::SentDummyOrTimeoutTriggered);
         assert!(w.state == State::Gap);
 
         // timeout in Gap changes to Idle
         w.state = State::Gap;
-        w.update_state(false, false);
+        w.update_state(PaddingStateEvent::SentDummyOrTimeoutTriggered);
         assert!(w.state == State::Idle);
 
-        // TODO: this is what the python implementation does, but it seems odd.
-        // real packet send in Gap changes to Idle
+        // TODO: to check. Here the python implementation changes to Idle on packet send in Gap state
         w.state = State::Gap;
-        w.update_state(false, true);
-        assert!(w.state == State::Idle);
+        w.update_state(PaddingStateEvent::SentRealPacket);
+        assert!(w.state == State::Burst);
     }
 
     #[test]
