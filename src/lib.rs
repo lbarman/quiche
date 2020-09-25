@@ -3020,6 +3020,7 @@ impl Connection {
             return None;
         }
 
+        let now = time::Instant::now();
         let timeout = if self.draining_timer.is_some() {
             // Draining timer takes precedence over all other timers. If it is
             // set it means the connection is closing so there's no point in
@@ -3030,13 +3031,12 @@ impl Connection {
             // detection timers. If they are both unset (i.e. `None`) then the
             // result is `None`, but if at least one of them is set then a
             // `Some(...)` value is returned.
-            let timers = [self.idle_timer, self.recovery.loss_detection_timer()];
+            let timers = [self.idle_timer, self.recovery.loss_detection_timer(), self.padding_algorithm.next_dummy()];
 
             timers.iter().filter_map(|&x| x).min()
         };
 
         if let Some(timeout) = timeout {
-            let now = time::Instant::now();
 
             if timeout <= now {
                 return Some(time::Duration::new(0, 0));
