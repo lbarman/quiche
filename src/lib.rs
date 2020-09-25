@@ -2543,11 +2543,14 @@ impl Connection {
             &self.trace_id,
         );
 
-        if has_data {
-            self.padding_algorithm.update_state(now, PaddingStateEvent::SentRealPacket);
+        let event = if has_data {
+            PaddingStateEvent::SentRealPacket
         } else {
-            self.padding_algorithm.update_state(now, PaddingStateEvent::SentDummyOrTimeoutTriggered);
-        }
+            PaddingStateEvent::SentDummyOrTimeoutTriggered
+        };
+        self.padding_algorithm.update_state(now, event);
+        // this will update the timeout self.padding_algorithm.next_dummy()
+        self.padding_algorithm.sample_next_dummy(now);
 
         qlog_with!(self.qlog_streamer, q, {
             let ev = self.recovery.to_qlog();
