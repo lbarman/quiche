@@ -2543,6 +2543,12 @@ impl Connection {
             &self.trace_id,
         );
 
+        if has_data {
+            self.padding_algorithm.update_state(PaddingStateEvent::SentRealPacket);
+        } else {
+            self.padding_algorithm.update_state(PaddingStateEvent::SentDummyOrTimeoutTriggered);
+        }
+
         qlog_with!(self.qlog_streamer, q, {
             let ev = self.recovery.to_qlog();
             q.add_event(ev).ok();
@@ -7161,7 +7167,7 @@ mod tests {
 
 pub use crate::packet::Header;
 pub use crate::packet::Type;
-pub use crate::padding::{NonePadding, Padding, PaddingAlgorithm};
+pub use crate::padding::{NonePadding, Padding, PaddingAlgorithm, PaddingStateEvent};
 pub use crate::recovery::CongestionControlAlgorithm;
 pub use crate::stream::StreamIter;
 
